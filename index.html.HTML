@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prize Wheel</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;900&amp;display=swap" rel="stylesheet">
+  <style>
+        body { font-family: 'DM Sans', sans-serif; }
+        @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
+        .result-pulse { animation: pulse 0.6s ease-in-out 2; }
+        @keyframes glow-pulse { 0%,100%{opacity:0.6} 50%{opacity:1} }
+        .segment-glow { animation: glow-pulse 1.2s ease-in-out infinite; }
+    </style>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js" type="text/javascript"></script>
+  <script src="/_sdk/data_sdk.js" type="text/javascript"></script>
+  <script src="/_sdk/resizing_sdk.js" type="text/javascript"></script>
+ <script src="/_sdk/telemetry_sdk.js"></script></head>
+ <body data-template-id="__page-root" class="min-h-screen flex flex-col items-center justify-center p-4">
+  <header class="text-center mb-6">
+   <h1 data-template-id="title" class="canva-text text-3xl font-black tracking-tight"></h1>
+   <p data-template-id="subtitle" class="canva-text mt-1 text-sm opacity-80"></p>
+  </header>
+  <main class="flex flex-col items-center">
+   <div class="relative inline-block"><!-- Pointer -->
+    <svg class="absolute top-[-10px] left-1/2 -translate-x-1/2 z-10" width="36" height="46" viewbox="0 0 36 46"><polygon points="18,46 3,8 33,8" fill="#C89B3C" stroke="#1F4E79" stroke-width="2" /> <polygon points="18,40 7,12 29,12" fill="#E5C77A" />
+    </svg><!-- Wheel -->
+    <svg id="wheel-svg" width="340" height="340" viewbox="0 0 340 340"><defs>
+      <filter id="shadow">
+       <fedropshadow dx="0" dy="4" stddeviation="6" flood-opacity="0.25" />
+      </filter>
+      <filter id="seg-glow">
+       <fegaussianblur stddeviation="4" result="blur" />
+       <femerge>
+        <femergenode in="blur" />
+        <femergenode in="SourceGraphic" />
+       </femerge>
+      </filter>
+     </defs> <circle cx="170" cy="170" r="166" fill="none" stroke="#1F4E79" stroke-width="5" filter="url(#shadow)" /> <circle cx="170" cy="170" r="163" fill="none" stroke="#C89B3C" stroke-width="3" /> <g id="wheel-group"></g> <g id="glow-group"></g> <circle cx="170" cy="170" r="28" fill="#C89B3C" stroke="#1F4E79" stroke-width="3" /> <circle cx="170" cy="170" r="18" fill="#FFFFFF" stroke="#C89B3C" stroke-width="2" />
+    </svg>
+   </div><button data-template-id="spin-button" id="spin-btn" class="canva-button mt-8 px-10 py-3 rounded-full text-lg font-bold shadow-lg hover:shadow-xl transition-all active:scale-95" onclick="spinWheel()"></button>
+   <div id="result-box" class="mt-6 text-center opacity-0 transition-opacity duration-500">
+    <p data-template-id="result-label" class="canva-text text-sm uppercase tracking-widest mb-1"></p>
+    <p id="result-value" class="text-2xl font-black" style="color:#C89B3C;"></p>
+   </div>
+  </main>
+  <script src="/_sdk/editing_sdk.js"></script>
+  <script>
+        const segments = ['10%','20%','30%','40%','50%','60%','70%','80%','90%','100%'];
+        const segCount = segments.length;
+        const segAngle = 360 / segCount;
+        const cx = 170, cy = 170, r = 160;
+        let currentRotation = 0;
+        let spinning = false;
+        let audioCtx;
+
+        (function drawWheel() {
+            const g = document.getElementById('wheel-group');
+            const colors = ['#FFFFFF','#FDF6E3'];
+            for (let i = 0; i < segCount; i++) {
+                const startAngle = (i * segAngle - 90) * Math.PI / 180;
+                const endAngle = ((i + 1) * segAngle - 90) * Math.PI / 180;
+                const x1 = cx + r * Math.cos(startAngle);
+                const y1 = cy + r * Math.sin(startAngle);
+                const x2 = cx + r * Math.cos(endAngle);
+                const y2 = cy + r * Math.sin(endAngle);
+                const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+                path.setAttribute('d', `M${cx},${cy} L${x1},${y1} A${r},${r} 0 0,1 ${x2},${y2} Z`);
+                path.setAttribute('fill', colors[i % 2]);
+                path.setAttribute('stroke', '#C89B3C');
+                path.setAttribute('stroke-width', '0.8');
+                path.id = 'seg-' + i;
+                g.appendChild(path);
+                const midAngle = ((i + 0.5) * segAngle - 90) * Math.PI / 180;
+                const tx = cx + (r * 0.65) * Math.cos(midAngle);
+                const ty = cy + (r * 0.65) * Math.sin(midAngle);
+                const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+                text.setAttribute('x', tx);
+                text.setAttribute('y', ty);
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('dominant-baseline', 'central');
+                text.setAttribute('font-size', '13');
+                text.setAttribute('font-weight', '800');
+                text.setAttribute('fill', '#1F4E79');
+                text.setAttribute('transform', `rotate(${(i+0.5)*segAngle}, ${tx}, ${ty})`);
+                text.textContent = segments[i];
+                g.appendChild(text);
+            }
+        })();
+
+        function playTick() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.frequency.value = 2200; osc.type = 'sine';
+            gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.04);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.04);
+        }
+
+        function highlightSegment(segIndex) {
+            const glowG = document.getElementById('glow-group');
+            glowG.innerHTML = '';
+            const startAngle = (segIndex * segAngle - 90) * Math.PI / 180;
+            const endAngle = ((segIndex + 1) * segAngle - 90) * Math.PI / 180;
+            const x1 = cx + r * Math.cos(startAngle);
+            const y1 = cy + r * Math.sin(startAngle);
+            const x2 = cx + r * Math.cos(endAngle);
+            const y2 = cy + r * Math.sin(endAngle);
+            const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+            path.setAttribute('d', `M${cx},${cy} L${x1},${y1} A${r},${r} 0 0,1 ${x2},${y2} Z`);
+            path.setAttribute('fill', 'rgba(200,155,60,0.3)');
+            path.setAttribute('filter', 'url(#seg-glow)');
+            path.classList.add('segment-glow');
+            // Apply same rotation as wheel
+            path.setAttribute('transform', `rotate(${currentRotation % 360}, ${cx}, ${cy})`);
+            glowG.appendChild(path);
+        }
+
+        function spinWheel() {
+            if (spinning) return;
+            spinning = true;
+            document.getElementById('spin-btn').disabled = true;
+            document.getElementById('result-box').style.opacity = '0';
+            document.getElementById('glow-group').innerHTML = '';
+
+            const targetSeg = Math.floor(Math.random() * 3);
+            const targetAngle = targetSeg * segAngle + segAngle * 0.2 + Math.random() * segAngle * 0.6;
+            const fullSpins = 5 + Math.floor(Math.random() * 3);
+            const totalRotation = fullSpins * 360 + (360 - targetAngle);
+            const finalRotation = currentRotation + totalRotation;
+            const duration = 4200 + Math.random() * 1800;
+            const startTime = performance.now();
+            const startRot = currentRotation;
+            let lastTickSeg = -1;
+
+            function easeOutQuint(t) { return 1 - Math.pow(1 - t, 5); }
+
+            function animate(now) {
+                let t = (now - startTime) / duration;
+                if (t > 1) t = 1;
+                const eased = easeOutQuint(t);
+                let rot = startRot + totalRotation * eased;
+                // Wobble near end
+                if (t > 0.96) {
+                    const wt = (t - 0.96) / 0.04;
+                    rot += Math.sin(wt * Math.PI * 3) * (1 - wt) * 2.5;
+                }
+                document.getElementById('wheel-group').setAttribute('transform', `rotate(${rot}, ${cx}, ${cy})`);
+                const currentSeg = Math.floor(((rot % 360 + 360) % 360) / segAngle);
+                if (currentSeg !== lastTickSeg && t < 0.92) { playTick(); lastTickSeg = currentSeg; }
+                if (t < 1) { requestAnimationFrame(animate); }
+                else {
+                    currentRotation = finalRotation;
+                    spinning = false;
+                    document.getElementById('spin-btn').disabled = false;
+                    highlightSegment(targetSeg);
+                    showResult(segments[targetSeg]);
+                }
+            }
+            requestAnimationFrame(animate);
+        }
+
+        function showResult(value) {
+            document.getElementById('result-value').textContent = `Result: ${value} | Code: AR.ECA-101`;
+            const box = document.getElementById('result-box');
+            box.style.opacity = '1';
+            box.classList.remove('result-pulse');
+            void box.offsetWidth;
+            box.classList.add('result-pulse');
+        }
+
+        lucide && lucide.createIcons && lucide.createIcons();
+    </script>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a04d30f4590ea09b',t:'MTc4MDMwNjEzOA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
